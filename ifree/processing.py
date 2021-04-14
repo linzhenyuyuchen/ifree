@@ -16,6 +16,7 @@ from sklearn.preprocessing import StandardScaler, Normalizer, MinMaxScaler
 
 from tqdm import tqdm
 from radiomics import featureextractor
+import SimpleITK as sitk
 
 class FeatureExtractor():
     def __init__(self, idList, imagePaths, maskPaths, paramPath, outputPath):
@@ -47,11 +48,46 @@ class FeatureExtractor():
             print("features saved to ", self.outputPath)
 
     def singleExtract(self, imageName, maskName, params):
+        if imageName.split(".")[-1] in ["bmp", "jpg", "png"]:
+            return self.singleExtract_BMP(imageName, maskName, params)
+        else:
+            return self.singleExtract_NII(imageName, maskName, params)
+
+    def singleExtract_BMP(self, imageName, maskName, params):
+
+        try:
+            extractor = featureextractor.RadiomicsFeatureExtractor(params)
+
+
+            color_channel = 0
+            im = sitk.ReadImage(imageName)
+            selector = sitk.VectorIndexSelectionCastImageFilter()
+            selector.SetIndex(color_channel)
+            im = selector.Execute(im)
+
+
+            color_channel = 0
+            mas = sitk.ReadImage(maskName)
+            selector = sitk.VectorIndexSelectionCastImageFilter()
+            selector.SetIndex(color_channel)
+            mas = selector.Execute(mas)
+
+            result = extractor.execute(im, mas)
+            feature = {key: val for key, val in six.iteritems(result)}
+
+            
+        except Exception as e:
+            print(e)
+            print("error when extacting ", imageName)
+            feature = None
+        return feature
+    def singleExtract_NII(self, imageName, maskName, params):
 
         try:
             extractor = featureextractor.RadiomicsFeatureExtractor(params)
             result = extractor.execute(imageName, maskName)
             feature = {key: val for key, val in six.iteritems(result)}
+
         except Exception as e:
             print(e)
             print("error when extacting ", imageName)

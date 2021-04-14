@@ -1,5 +1,3 @@
-
-
-import ifree.radiomics
+import ifree.processing
 import ifree.dicom
 

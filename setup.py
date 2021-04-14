@@ -10,12 +10,21 @@ with open('README.md', 'r') as readme_file:
     readme = readme_file.read()
 
 requirements = [
-    'numpy>=1.15.4',
-    'pandas>=0.24.2',
-    #radiomics
-    #itk
-    #vtk
-    #SimpleITK
+    "dicom2nifti",
+    "dicompyler-core",
+    "lifelines",
+    "itk",
+    "minepy",
+    "numpy",
+    "numpy>=1.15.4",
+    "pandas>=0.24.2",
+    "pyradiomics",
+    "scikit-image>=0.14",
+    "scipy",
+    "SimpleITK",
+    "sklearn",
+    "tqdm",
+    "vtk",
 ]
 
 

@@ -3,16 +3,20 @@ import cv2
 import itk
 import vtk
 import shutil
-import argparse
 import pickle
-from vtk.util.numpy_support import vtk_to_numpy
+import pydicom
+import argparse
 import numpy
 import numpy as np
 import pandas as pd
-import pydicom as dicom
-import SimpleITK as sitk
 from tqdm import tqdm
+import SimpleITK as sitk
+from dicompylercore import dvhcalc
+from dicompylercore import dicomparser
+from vtk.util.numpy_support import vtk_to_numpy
 
+ImageType   =  itk.Image[itk.F, 3]
+ImageTypeUC =  itk.Image[itk.UC,3]
 
 def reorientation(input_image):
     region3d = input_image.GetBufferedRegion()
@@ -99,9 +103,9 @@ def writeNii(write_path, Image, imageType):
 #########################
 #####   读写DICOM    ####
 #########################
-def readDicom(dcm_path, ImageType):
+def readDicom(dcm_path, imageType):
     # 读取dicom文件
-    reader = itk.ImageSeriesReader[ImageType].New()
+    reader = itk.ImageSeriesReader[imageType].New()
     dicomIO = itk.GDCMImageIO.New()
     reader.SetImageIO(dicomIO)
     reader.SetFileNames(dcm_path)
@@ -110,7 +114,7 @@ def readDicom(dcm_path, ImageType):
 
     # 特定的窗宽窗位
     windowWidth, windowLevel, minValue = ImageAutoWidthLevel3DFuction(image3d)
-    windowLevelFilter = itk.IntensityWindowingImageFilter[ImageType, ImageType].New()
+    windowLevelFilter = itk.IntensityWindowingImageFilter[imageType, imageType].New()
     windowLevelFilter.SetInput(image3d)
     windowLevelFilter.SetOutputMaximum(350)
     windowLevelFilter.SetOutputMinimum(0)
@@ -119,9 +123,9 @@ def readDicom(dcm_path, ImageType):
 
     return windowLevelFilter.GetOutput()
 
-def readDoseDicom(dcm_path, ImageType):
+def readDoseDicom(dcm_path, imageType):
     # 读取dicom文件
-    reader = itk.ImageSeriesReader[ImageType].New()
+    reader = itk.ImageSeriesReader[imageType].New()
     dicomIO = itk.GDCMImageIO.New()
     reader.SetImageIO(dicomIO)
     reader.SetFileName(dcm_path)
@@ -152,7 +156,7 @@ def ReadRTDicom(rtPath,image,ContourList):
             rotMatInv[i*3 +j] = directionMatrix[j, i]
 
     #read RT
-    rtdcm_ds = dicom.read_file(rtPath, force=True)
+    rtdcm_ds = pydicom.read_file(rtPath, force=True)
     #校验 RT
     try:
         ROIContourSequenceA      = rtdcm_ds[0x3006, 0x0039].value
@@ -310,15 +314,17 @@ def GetFilePath(ImagePath):
     z = []
     z_mr = []
     patientID = ''
+    patientName = ''
     rtfile = ''
     dosefile = ''
     for file_path in os.listdir(ImagePath):
         if not file_path.lower().endswith('dcm'):
             print('Warn, {} is not a dicom file'.format(file_path))
             continue
-        dcm = dicom.read_file(ImagePath + '/' + file_path, force=True)
+        dcm = pydicom.read_file(ImagePath + '/' + file_path, force=True)
         try:
             dcm.SOPClassUID
+            patientName = dcm.PatientName
         except:
             print('file {} is corrupted, pass'.format(file_path))
             continue
@@ -352,7 +358,7 @@ def GetFilePath(ImagePath):
         result2 = zip(*sort_zipped2)
         z_mr, mrfiles = [list(x) for x in result2]
 
-    return ctfiles, rtfile, mrfiles, dosefile, patientID
+    return ctfiles, rtfile, mrfiles, dosefile, patientID, patientName
 
 
 #########################
@@ -449,7 +455,7 @@ def GetRTPath(ImagePath):
         if not file_path.lower().endswith('dcm'):
             print('Warn, {} is not a dicom file'.format(file_path))
             continue
-        dcm = dicom.read_file(ImagePath + '/' + file_path, force=True)
+        dcm = pydicom.read_file(ImagePath + '/' + file_path, force=True)
         try:
             dcm.SOPClassUID
         except:
@@ -476,7 +482,7 @@ def list_dcm_files(directory):
     for root, dirs, fns in os.walk(directory):
         for fn in fns:
             dcm_fn = os.path.join(root, fn)
-            dcm = dicom.read_file(dcm_fn, force=True)
+            dcm = pydicom.read_file(dcm_fn, force=True)
             if hasattr(dcm, 'SOPClassUID'):
                 if not hasattr(dcm, 'SOPInstanceUID'):
                     print(
@@ -550,91 +556,216 @@ def get_structure_related_image_files(structure_dcm, dcm_files):
 #########################
 ###  寻找与RT相关的文件  ##
 #########################
-def archiveFiles(mrDir, mrDir2):
+def archiveFiles(mrDir, mrDir2=None, copyed=False):
     patientNames = []
     patientIDs = []
     id2mrs = {}
     id2rt = {}
+    id2dose = {}
     for patient_dir in os.listdir(mrDir):
         print("================================")
         # get RT
         patienDir = os.path.join(mrDir, patient_dir)
-        rtfile, patientID, patientName = dicom.GetRTPath(patienDir)
+        ctfiles, rtfile, mrfiles, dosefile, patientID, patientName = GetFilePath(patienDir)
+
+
         print("rtfile ", rtfile)
+        print("dosefile ", dosefile)
         print("patientID ", patientID)
         print("patientName ", patientName)
+        if rtfile=='' or dosefile=='':
+            print("No RT or DOSE found!")
+            continue
         # get MRs
-        dcms_all = dicom.list_dcm_files(patienDir)
-        dcms_related = dicom.get_structure_related_image_files(pydicom.read_file(rtfile), dcms_all)
-        print("MRs related #", len(dcms_related))
+        #dcms_all = list_dcm_files(patienDir)
+        #dcms_related = get_structure_related_image_files(pydicom.read_file(rtfile), dcms_all)
+        #print("MR or CT related #", len(dcms_related))
         # make new dir
-        new_patient_dir = os.path.join(mrDir2, str(patientID))
-        if not os.path.exists(new_patient_dir):
-            os.makedirs(new_patient_dir)
-        # copy RT file
-        shutil.copyfile(rtfile, os.path.join(new_patient_dir, rtfile.split("/")[-1]))
-        # copy MR files
-        if len(dcms_related)>0:
+        if copyed:
+            new_patient_dir = os.path.join(mrDir2, str(patientID))
+            os.makedirs(new_patient_dir, exist_ok=True)
+            # copy RT file
+            shutil.copyfile(rtfile, os.path.join(new_patient_dir, rtfile.split("/")[-1]))
+            # copy Dose file
+            shutil.copyfile(dosefile, os.path.join(new_patient_dir, dosefile.split("/")[-1]))
+            # copy MR files
+        if len(ctfiles)>0:
+        #if len(dcms_related)>0:
             patientNames.append(patientName)
             patientIDs.append(patientID)
-            id2mrs[patientID] = [ dc["path"] for dc in dcms_related]
+            #id2mrs[patientID] = [ dc["path"] for dc in dcms_related]
+            id2mrs[patientID] = [ dc for dc in ctfiles]
             id2rt[patientID] = rtfile
-            for p in dcms_related:
-                shutil.copyfile(p["path"], os.path.join(new_patient_dir, p["path"].split("/")[-1]))
-    return patientNames, patientIDs, id2mrs, id2rt
+            id2dose[patientID] = dosefile
+            if copyed:
+                for p in dcms_related:
+                    shutil.copyfile(p["path"], os.path.join(new_patient_dir, p["path"].split("/")[-1]))
+    return patientNames, patientIDs, id2mrs, id2rt, id2dose
 
 
-def cropROI(id2mrs, id2rt, roiName, newSize, newDir):
+def cropROI(id2mrs, id2rt, roiName, newDir, newSize=None):
+    s = roiName
+    selected_position_list = [s, s.lower(), s.upper()]
+    ContourList = selected_position_list
+    idx_done = []
+    for pid, mrfiles in id2mrs.items():
+        try:
+            selected_position = None
+            image3d = readDicom(mrfiles, ImageType)
+            ROI, pointXYZ = ReadRTDicom(id2rt[pid], image3d, ContourList)
+
+            for i in selected_position_list:
+                if i in ROI.keys():
+                    selected_position = i
+            if selected_position is None:
+                print("No roi found!")
+                continue
+            else:
+                print(f"{selected_position} found!")
+            mask3d = ROI[selected_position]
+
+            
+            origion3d = mask3d.GetOrigin()
+            spacing3d = mask3d.GetSpacing()
+            region3d = mask3d.GetBufferedRegion()
+            start3d = region3d.GetIndex()
+            if newSize is None:
+                size3d = region3d.GetSize()
+            else:
+                size3d = newSize
+            
+            #image3d_reorient = reorientation(image3d)
+
+            # resample Mask size
+            interpolatorType = itk.LinearInterpolateImageFunction[ImageTypeUC, itk.D]
+            interpolator = interpolatorType.New()
+            resample2dFilter = itk.ResampleImageFilter[ImageTypeUC, ImageTypeUC].New()
+            resample2dFilter.SetInterpolator(interpolator)
+            resample2dFilter.SetSize(size3d)
+            resample2dFilter.SetOutputOrigin(origion3d)
+            resample2dFilter.SetOutputSpacing(spacing3d)
+            resample2dFilter.SetOutputStartIndex(start3d)
+            resample2dFilter.SetInput(mask3d)
+            resample2dFilter.Update()
+            reampleMask3d = resample2dFilter.GetOutput()
+
+            # resample MR according to Mask
+            interpolatorType = itk.LinearInterpolateImageFunction[ImageType, itk.D]
+            interpolator = interpolatorType.New()
+            resample2dFilter = itk.ResampleImageFilter[ImageType, ImageType].New()
+            resample2dFilter.SetInterpolator(interpolator)
+            resample2dFilter.SetSize(size3d)
+            resample2dFilter.SetOutputOrigin(origion3d)
+            resample2dFilter.SetOutputSpacing(spacing3d)
+            resample2dFilter.SetOutputStartIndex(start3d)
+            resample2dFilter.SetInput(image3d)
+            resample2dFilter.Update()
+            reampleImage3d = resample2dFilter.GetOutput()
+
+            new_patient_dir = os.path.join(newDir, str(pid))
+            os.makedirs(new_patient_dir, exist_ok=True)
+
+            # save mask
+            mask_nii_path = os.path.join(new_patient_dir, "mask.nii")
+            writeNii(mask_nii_path, reampleMask3d, ImageTypeUC)
+            
+            image_nii_path = os.path.join(new_patient_dir, "mr.nii")
+            writeNii(image_nii_path, reampleImage3d, ImageType)
+            idx_done.append(pid)
+        except Exception as e:
+            print(e)
+    return idx_done 
+
+
+def cropDose(id2dose, id2rt, roiName, newDir, newSize=None):
     ImageType = itk.Image[itk.F, 3]
     ImageTypeUC =  itk.Image[itk.UC,3]
 
     s = roiName
-    selected_position_list = [s, s.lower(), s.upper()]
+    selected_position_list = [s, s.lower(), s.upper(), s.capitalize(), s.title(), s.replace("-", " ")]
     ContourList = selected_position_list
+    idx_done = []
+    for pid, rtfile in id2rt.items():
+        try:
+            selected_position = None
+            image3d = readDoseDicom(id2dose[pid], ImageType)
+            image3d = readDicom(mrfiles, ImageType)
+            ROI, pointXYZ = ReadRTDicom(rtfile, image3d, ContourList)
 
-    for pid, mrfiles in id2mrs.items():
-        image3d = readDicom(mrfiles, ImageType)
-        ROI, pointXYZ = ReadRTDicom(id2rt[pid], image3d, ContourList)
+            for i in selected_position_list:
+                if i in ROI.keys():
+                    selected_position = i
+            if selected_position is None:
+                print("No roi found!")
+                continue
+            else:
+                print(f"{selected_position} found!")
 
-        for i in selected_position_list:
-            if i in ROI.keys():
-                selected_position = i
-        mask3d = ROI[selected_position]
+            mask3d = ROI[selected_position]
+            
+            origion3d = mask3d.GetOrigin()
+            spacing3d = mask3d.GetSpacing()
+            region3d = mask3d.GetBufferedRegion()
+            start3d = region3d.GetIndex()
+            if newSize is None:
+                size3d = region3d.GetSize()
+            else:
+                size3d = newSize
+            
+            #image3d_reorient = reorientation(image3d)
 
-        
-        origion3d = mask3d.GetOrigin()
-        spacing3d = mask3d.GetSpacing()
-        region3d = mask3d.GetBufferedRegion()
-        start3d = region3d.GetIndex()
-        if newSize is None:
-            size3d = region3d.GetSize()
-        else:
-            size3d = newSize
-        
-        #image3d_reorient = reorientation(image3d)
+            # resample Dose according to Mask
+            interpolatorType = itk.LinearInterpolateImageFunction[ImageType, itk.D]
+            interpolator = interpolatorType.New()
+            resample2dFilter = itk.ResampleImageFilter[ImageType, ImageType].New()
+            resample2dFilter.SetInterpolator(interpolator)
+            resample2dFilter.SetSize(size3d)
+            resample2dFilter.SetOutputOrigin(origion3d)
+            resample2dFilter.SetOutputSpacing(spacing3d)
+            resample2dFilter.SetOutputStartIndex(start3d)
+            resample2dFilter.SetInput(image3d)
+            resample2dFilter.Update()
+            reampleImage3d = resample2dFilter.GetOutput()
 
-        # resample MR according to Mask
-        interpolatorType = itk.LinearInterpolateImageFunction[ImageType, itk.D]
-        interpolator = interpolatorType.New()
-        resample2dFilter = itk.ResampleImageFilter[ImageType, ImageType].New()
-        resample2dFilter.SetInterpolator(interpolator)
-        resample2dFilter.SetSize(size3d)
-        resample2dFilter.SetOutputOrigin(origion3d)
-        resample2dFilter.SetOutputSpacing(spacing3d)
-        resample2dFilter.SetOutputStartIndex(start3d)
-        resample2dFilter.SetInput(image3d)
-        resample2dFilter.Update()
-        reampleImage3d = resample2dFilter.GetOutput()
+            new_patient_dir = os.path.join(newDir, str(pid))
+            if not os.path.exists(new_patient_dir):
+                os.makedirs(new_patient_dir)
 
-        new_patient_dir = os.path.join(newDir, str(pid))
-        if not os.path.exists(new_patient_dir):
-            os.makedirs(new_patient_dir)
+            # save mask
+            mask_nii_path = os.path.join(new_patient_dir, "mask.nii")
+            writeNii(mask_nii_path, mask3d, ImageTypeUC)
+            
+            image_nii_path = os.path.join(new_patient_dir, "dose.nii")
+            writeNii(image_nii_path, reampleImage3d, ImageType)
+            idx_done.append(pid)
+        except Exception as e:
+            print(e)
+    return idx_done 
+#########################
+###     获取dvh数据     ##
+#########################
+def get_dvh_of_key(rtssfile, rtdosefile, keyname=None):
+    percents = [0, 1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 97, 99]
+    RTss = dicomparser.DicomParser(rtssfile)
+    RTstructures = RTss.GetStructures()
 
-        # save mask
-        mask_nii_path = os.path.join(new_patient_dir, "mask.nii")
-        writeNii(mask_nii_path, mask3d, ImageTypeUC)
-        
-        image_nii_path = os.path.join(new_patient_dir, "mr.nii")
-        writeNii(image_nii_path, reampleImage3d, ImageType)
-        
-        
+    keyname_list = [keyname, keyname.lower(), keyname.upper(), keyname.capitalize(), keyname.title(), keyname.replace("-", " ")]
+
+    # Generate the calculated DVHs
+    # array_counts = []
+    # array_bins = []
+    data = {}
+    for key, structure in RTstructures.items():
+        #print(structure)
+        roiname = structure["name"]
+        if (keyname is not None) and (roiname not in keyname_list):
+            continue
+        res = dvhcalc.get_dvh(rtssfile, rtdosefile, key)
+        if (len(res.counts) and res.counts[0] != 0):
+            # print('DVH found for ' + keyname)
+            # array_counts.append( res.counts) 
+            # array_bins.append( res.bins)
+            doses = [res.statistic(f"D{i}").value for i in percents]
+            data[roiname] = (doses, res.max, res.min, res.mean)
+
+    return data, percents

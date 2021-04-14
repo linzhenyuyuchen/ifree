@@ -29,7 +29,9 @@ python setup.py install
 
 ## Example
 
-### Radiomics Feature Extractor
+### Feature Processing
+
+#### Radiomics Feature Extractor
 
 radiomics.yaml
 
@@ -62,7 +64,7 @@ featureClass:
 ```
 
 ```python
-from ifree import radiomics
+from ifree import processing
 
 idx = list()
 imagePaths = list()
@@ -70,17 +72,17 @@ maskPaths = list()
 paramPath = "./radiomics.yaml"
 outputPath = "./features.csv"
 
-helper = radiomics.FeatureExtractor(idx, imagePaths, maskPaths, paramPath, outputPath)
+helper = processing.FeatureExtractor(idx, imagePaths, maskPaths, paramPath, outputPath)
 helper.extract(force=True)
 
 ```
 
-### Feature Processing
+#### Feature Pre-Processing
 
 ```python
 df_train = pd.DataFrame()
 df_test = pd.DataFrame()
-helper = radiomics.FeatureProcess(df_train, df_test)
+helper = processing.FeatureProcess(df_train, df_test)
 # preprocessing methods
 helper.simpleImpute(strategy='mean') # mean, median, most_frequent, constant
 helper.standardScale()
@@ -92,13 +94,13 @@ array_test = helper.X_test
 ```
 
 
-### Feature Selector
+#### Feature Selector
 
 ```python
 x_array = np.array()
 y_list = list()
 featureNames = list()
-selector = radiomics.FeatureSelector(x_array, y_list, featureNames)
+selector = processing.FeatureSelector(x_array, y_list, featureNames)
 # selection methods
 x_array_new, y_array_new = selector.univarSelector(top_k=600, method_name="f_classif", inplace=True)
 print(x_array_new.shape)
@@ -116,24 +118,53 @@ print(selector.featureNames)
 
 ### Dicom Processing
 
+#### Crop CT/MR according to RT
+
 ```python
 from ifree import dicom
 
 # get paths for CT, MR, DOSE and RT
 fileDir = "./p/"
-ctfiles, rtfile, mrfiles, dosefile, patientID = dicom.GetFilePath(fileDir)
+ctfiles, rtfile, mrfiles, dosefile, patientID, patientName = dicom.GetFilePath(fileDir)
 
 # get MRs or CTs related to RT and copy them to new dir
-patientNames, patientIDs, id2mrs, id2rt = archiveFiles(old_Dir, new_Dir)
+patientNames, patientIDs, id2mrs, id2rt, id2dose = dicom.archiveFiles(old_Dir, new_Dir, copyed=True)
 
 # crop ROI-MASK and its CT or MR
 roiName = "ctv"
 newDir = "./p/"
 newSize = [100, 100, 100] # leave None to get origin size
-cropROI(id2mrs, id2rt, roiName, newSize, newDir):
+idx_done_list = dicom.cropROI(id2mrs, id2rt, roiName, newDir, newSize)
+
+idx_done_list = dicom.cropDose(id2dose, id2rt, roiName, newDir, newSize)
 ```
 
+### Get Dose-Volume Histogram (DVH)
 
+```python
+# Get Dose-Volume Histogram (DVH)
+rtssfile = "./RT.dicom"
+rtdosefile = "./RS.dicom"
+# percents is the space between 0-100
+roiname = "Body"
+data, percents = dicom.get_dvh_of_key(rtssfile, rtdosefile)
+dose_list, max_value, min_value, mean_value = data[roiname]
+
+# saved to dataframe
+dose_features = {}
+roiname = "Body"
+for i, (pid, rtssfile) in enumerate(id2rt.item()):
+    rtdosefile = id2dose[pid]
+    # percents is the space between 0-100
+    data, percents = dicom.get_dvh_of_key(rtssfile, rtdosefile)
+    dose_list, max_value, min_value, mean_value = data[roiname]
+    tmp = {"pid": pid, "dose_max": max_value, "dose_min": min_value, "dose_mean": mean_value,}
+    for i, pc in enumerate(percents):
+        tmp[f"dose_{pc}"] = dose_list[i]
+    dose_features[i] = tmp
+df_dose_features = pd.DataFrame.from_dict(dose_features, orient='index')
+df_dose_features.head()
+```
 
 
 For more examples, see the [examples folder](https://github.com/linzhenyuyuchen/ifree/tree/master/examples).
