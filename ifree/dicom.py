@@ -629,20 +629,25 @@ def cropROI(id2mrs, id2rt, roiName, newDir, newSize=None):
             spacing3d = mask3d.GetSpacing()
             region3d = mask3d.GetBufferedRegion()
             start3d = region3d.GetIndex()
+            size3d = region3d.GetSize()
             if newSize is None:
-                size3d = region3d.GetSize()
+                newOrigin = origion3d
             else:
-                size3d = newSize
+                newOrigin = [0,0,0]
+                newOrigin[0] = origion3d[0] + spacing3d[0]*size3d[0]/2 - spacing3d[0]*newSize[0]/2
+                newOrigin[1] = origion3d[1] + spacing3d[1]*size3d[1]/2 - spacing3d[1]*newSize[1]/2
+                newOrigin[2] = origion3d[2] + spacing3d[2]*size3d[2]/2 - spacing3d[2]*newSize[2]/2
             
             #image3d_reorient = reorientation(image3d)
+            
 
             # resample Mask size
             interpolatorType = itk.LinearInterpolateImageFunction[ImageTypeUC, itk.D]
             interpolator = interpolatorType.New()
             resample2dFilter = itk.ResampleImageFilter[ImageTypeUC, ImageTypeUC].New()
             resample2dFilter.SetInterpolator(interpolator)
-            resample2dFilter.SetSize(size3d)
-            resample2dFilter.SetOutputOrigin(origion3d)
+            resample2dFilter.SetSize(newSize)
+            resample2dFilter.SetOutputOrigin(newOrigin)
             resample2dFilter.SetOutputSpacing(spacing3d)
             resample2dFilter.SetOutputStartIndex(start3d)
             resample2dFilter.SetInput(mask3d)
@@ -654,8 +659,8 @@ def cropROI(id2mrs, id2rt, roiName, newDir, newSize=None):
             interpolator = interpolatorType.New()
             resample2dFilter = itk.ResampleImageFilter[ImageType, ImageType].New()
             resample2dFilter.SetInterpolator(interpolator)
-            resample2dFilter.SetSize(size3d)
-            resample2dFilter.SetOutputOrigin(origion3d)
+            resample2dFilter.SetSize(newSize)
+            resample2dFilter.SetOutputOrigin(newOrigin)
             resample2dFilter.SetOutputSpacing(spacing3d)
             resample2dFilter.SetOutputStartIndex(start3d)
             resample2dFilter.SetInput(image3d)
