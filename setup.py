@@ -30,7 +30,7 @@ requirements = [
 
 setup(
     name='ifree',
-    version='0.1.0',
+    version='1.1.1',
     description="i love freedom, free my hand.",
     long_description=readme,
     long_description_content_type='text/markdown',

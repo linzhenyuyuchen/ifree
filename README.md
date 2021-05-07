@@ -5,7 +5,14 @@
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/ifree.svg)
 [![License](https://img.shields.io/pypi/l/ifree)](https://github.com/linzhenyuyuchen/ifree/blob/master/LICENSE)
 
-**ifree** is a small python package for making you free.
+**ifree** is a small python package for making you free. 
+
+- Radiomics Feature Extraction
+- Feature Pre-Processing and Selecting, 
+- Dicom Processing
+- Crop CT/MR according to RT Structure
+- Calculate dose volume histogram (DVH)
+  
 One of the main benefits of **ifree** is that it handles data easily (see [example below](#example)).
 
 
