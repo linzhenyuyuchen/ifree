@@ -1,9 +1,9 @@
 # ifree 
 
-[![Python package](https://github.com/linzhenyuyuchen/ifree/workflows/Python%20package/badge.svg)](https://github.com/linzhenyuyuchen/ifree/actions)
-[![PyPI](https://img.shields.io/pypi/v/torchtuples.svg)](https://pypi.org/project/ifree/)
+[![Python package](https://img.shields.io/badge/Python-ifree-orange)](https://github.com/linzhenyuyuchen/ifree/actions)
+[![PyPI](https://img.shields.io/pypi/v/ifree)](https://pypi.org/project/ifree/)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/ifree.svg)
-[![License](https://img.shields.io/badge/License-BSD%202--Clause-orange.svg)](https://github.com/linzhenyuyuchen/ifree/blob/master/LICENSE)
+[![License](https://img.shields.io/pypi/l/ifree)](https://github.com/linzhenyuyuchen/ifree/blob/master/LICENSE)
 
 **ifree** is a small python package for making you free.
 One of the main benefits of **ifree** is that it handles data easily (see [example below](#example)).
